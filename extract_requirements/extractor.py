@@ -2,6 +2,7 @@
 Main Extractor - Orchestrates fetching and preparing content for analysis.
 """
 import os
+import traceback
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 
@@ -145,6 +146,7 @@ class RequirementsExtractor:
             return {
                 "success": False,
                 "error": f"Unexpected error: {str(e)}",
+                "traceback": traceback.format_exc(),
                 "repo_url": repo_url
             }
 
