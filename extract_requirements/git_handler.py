@@ -1,11 +1,17 @@
 """
 Git Repository Handler - Fetches files from GitHub/GitLab using their APIs.
 """
-import re
-import requests
-from typing import Tuple, List, Dict, Optional
-from urllib.parse import urlparse
+
 import base64
+import sys
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
+
+import requests
+from loguru import logger
+
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 
 
 class GitRepoHandler:
@@ -13,14 +19,28 @@ class GitRepoHandler:
 
     # Common paths where deployment files are typically located
     DEPLOYMENT_PATHS = [
-        "helm", "deploy", "k8s", "manifests", "charts", "operators",
-        "deployment", "kubernetes", "openshift", "config"
+        "helm",
+        "deploy",
+        "k8s",
+        "manifests",
+        "charts",
+        "operators",
+        "deployment",
+        "kubernetes",
+        "openshift",
+        "config",
     ]
 
     # File patterns to look for
     DEPLOYMENT_FILE_PATTERNS = [
-        "values.yaml", "Chart.yaml", "deployment.yaml", "statefulset.yaml",
-        "configmap.yaml", "service.yaml", "*.crd.yaml", "kustomization.yaml"
+        "values.yaml",
+        "Chart.yaml",
+        "deployment.yaml",
+        "statefulset.yaml",
+        "configmap.yaml",
+        "service.yaml",
+        "*.crd.yaml",
+        "kustomization.yaml",
     ]
 
     def __init__(self, github_token: Optional[str] = None, gitlab_token: Optional[str] = None):
@@ -117,10 +137,7 @@ class GitRepoHandler:
             if self._is_deployment_file(file_path):
                 content = self._fetch_file(owner, repo, file_path, platform)
                 if content:
-                    deployment_files.append({
-                        "path": file_path,
-                        "content": content
-                    })
+                    deployment_files.append({"path": file_path, "content": content})
 
         return deployment_files
 
@@ -157,15 +174,13 @@ class GitRepoHandler:
                 file_paths = [
                     item["path"]
                     for item in tree
-                    if item["type"] == "blob" and (
-                        item["path"].endswith(".yaml") or
-                        item["path"].endswith(".yml")
-                    )
+                    if item["type"] == "blob"
+                    and (item["path"].endswith(".yaml") or item["path"].endswith(".yml"))
                 ]
                 return file_paths
 
             except requests.RequestException as e:
-                print(f"Warning: Could not fetch file tree from branch {branch}: {e}")
+                logger.info(f"Warning: Could not fetch file tree from branch {branch}: {e}")
                 continue
 
         return []
@@ -208,7 +223,11 @@ class GitRepoHandler:
             return True
 
         # Check pattern matches (e.g., *.crd.yaml)
-        if file_name.endswith(".crd.yaml") or file_name.endswith(".yaml") or file_name.endswith(".yml"):
+        if (
+            file_name.endswith(".crd.yaml")
+            or file_name.endswith(".yaml")
+            or file_name.endswith(".yml")
+        ):
             # Look for common keywords in filename
             keywords = ["deploy", "stateful", "daemon", "config", "kustomize", "helm", "operator"]
             return any(keyword in file_name.lower() for keyword in keywords)
@@ -235,7 +254,7 @@ class GitRepoHandler:
                 return content
 
         except (requests.RequestException, KeyError, ValueError) as e:
-            print(f"Warning: Could not fetch {path}: {e}")
+            logger.info(f"Warning: Could not fetch {path}: {e}")
             return None
 
         return None
@@ -263,7 +282,7 @@ class GitRepoHandler:
             return response.text
 
         except requests.RequestException as e:
-            print(f"Warning: Could not fetch {path}: {e}")
+            logger.info(f"Warning: Could not fetch {path}: {e}")
             return None
 
     def _fetch_file(self, owner: str, repo: str, path: str, platform: str) -> Optional[str]:
@@ -274,7 +293,9 @@ class GitRepoHandler:
             return self._fetch_gitlab_file(owner, repo, path)
         return None
 
-    def _list_directory(self, owner: str, repo: str, path: str, platform: str) -> List[Dict[str, str]]:
+    def _list_directory(
+        self, owner: str, repo: str, path: str, platform: str
+    ) -> List[Dict[str, str]]:
         """List files in a directory."""
         if platform == "github":
             return self._list_github_directory(owner, repo, path)

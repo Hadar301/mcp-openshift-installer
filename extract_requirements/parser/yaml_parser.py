@@ -1,9 +1,17 @@
 """
 YAML Parser - Extracts resource requirements from Kubernetes/Helm YAML files.
 """
+
+import sys
+from typing import Any, Dict, List
+
 import yaml
-from typing import Dict, List, Any, Optional
+from loguru import logger
+
 from extract_requirements.models.requirements import ParsedYAMLResources
+
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 
 
 class YAMLParser:
@@ -27,7 +35,10 @@ class YAMLParser:
             # Determine file type and parse accordingly
             if "values.yaml" in file_path.lower():
                 return self._parse_helm_values(documents)
-            elif any(keyword in file_path.lower() for keyword in ["deployment", "statefulset", "daemonset"]):
+            elif any(
+                keyword in file_path.lower()
+                for keyword in ["deployment", "statefulset", "daemonset"]
+            ):
                 return self._parse_k8s_workload(documents)
             elif "configmap" in file_path.lower():
                 return self._parse_configmap(documents)
@@ -36,7 +47,7 @@ class YAMLParser:
                 return self._parse_k8s_manifest(documents)
 
         except yaml.YAMLError as e:
-            print(f"Warning: Could not parse YAML in {file_path}: {e}")
+            logger.info(f"Warning: Could not parse YAML in {file_path}: {e}")
             return ParsedYAMLResources()
 
     def _parse_helm_values(self, documents: List[Dict[str, Any]]) -> ParsedYAMLResources:
@@ -139,11 +150,12 @@ class YAMLParser:
                 if "xmx" in value.lower() or "xms" in value.lower():
                     # Extract memory from JVM opts (e.g., -Xmx8g)
                     import re
-                    match = re.search(r'-Xmx(\d+[gmkGMK])', value)
+
+                    match = re.search(r"-Xmx(\d+[gmkGMK])", value)
                     if match:
                         memory = match.group(1).upper()
                         # Convert to standard format (e.g., 8G -> 8Gi)
-                        if memory[-1] == 'G':
+                        if memory[-1] == "G":
                             result.memory_requests = f"{memory}i"
 
         return result
@@ -196,7 +208,9 @@ class YAMLParser:
                         result.gpu_requests = {}
                     result.gpu_requests[gpu_key] = str(limits[gpu_key])
 
-    def _extract_storage_requirements(self, persistence: Dict[str, Any], result: ParsedYAMLResources):
+    def _extract_storage_requirements(
+        self, persistence: Dict[str, Any], result: ParsedYAMLResources
+    ):
         """Extract storage requirements from persistence configuration."""
         if not isinstance(persistence, dict):
             return
@@ -223,18 +237,18 @@ class YAMLParser:
             # Extract GPU model from node selector if present (NEW)
             for key, value in spec["nodeSelector"].items():
                 # Check for NVIDIA GPU model labels
-                if 'nvidia.com/gpu.product' in key:
+                if "nvidia.com/gpu.product" in key:
                     result.gpu_model = value
-                elif 'nvidia.com/gpu.family' in key:
+                elif "nvidia.com/gpu.family" in key:
                     result.gpu_model = value
                 # Check for AMD GPU labels
-                elif 'amd.com/gpu.device-id' in key:
+                elif "amd.com/gpu.device-id" in key:
                     result.gpu_model = value
                 # Check for Intel GPU labels
-                elif 'intel.com/gpu.product' in key:
+                elif "intel.com/gpu.product" in key:
                     result.gpu_model = value
                 # Check for generic accelerator class labels
-                elif 'accelerator' in key.lower() and value:
+                elif "accelerator" in key.lower() and value:
                     result.gpu_model = value
 
         # Tolerations
@@ -293,23 +307,25 @@ class YAMLParser:
                     continue
 
                 # Check if this is a CRD
-                if doc.get('kind') != 'CustomResourceDefinition':
+                if doc.get("kind") != "CustomResourceDefinition":
                     continue
 
-                metadata = doc.get('metadata', {})
-                spec = doc.get('spec', {})
+                metadata = doc.get("metadata", {})
+                spec = doc.get("spec", {})
 
-                name = metadata.get('name', '')
-                group = spec.get('group', '')
-                versions = [v.get('name', '') for v in spec.get('versions', [])]
+                name = metadata.get("name", "")
+                group = spec.get("group", "")
+                versions = [v.get("name", "") for v in spec.get("versions", [])]
 
                 if name:
-                    crds.append({
-                        'name': name,
-                        'group': group,
-                        'versions': versions,
-                        'source': 'deployment_manifest'
-                    })
+                    crds.append(
+                        {
+                            "name": name,
+                            "group": group,
+                            "versions": versions,
+                            "source": "deployment_manifest",
+                        }
+                    )
 
         except yaml.YAMLError:
             # Silently skip files that can't be parsed

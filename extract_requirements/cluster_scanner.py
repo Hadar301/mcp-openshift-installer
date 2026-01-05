@@ -4,16 +4,24 @@ Cluster Scanner - Gathers resource information from OpenShift/Kubernetes cluster
 This module scans cluster resources using oc or kubectl CLI tools to gather information
 about node capacity, storage classes, GPU availability, operators, and CRDs.
 """
-import subprocess
+
 import json
-from typing import Optional, Dict, List, Any
+import subprocess
+import sys
+from typing import Any, Dict, List, Optional
+
+from loguru import logger
+
 
 from extract_requirements.utils.resource_comparisons import (
+    bytes_to_human_readable,
     cpu_to_millicores,
     memory_to_bytes,
-    bytes_to_human_readable,
-    millicores_to_human_readable
+    millicores_to_human_readable,
 )
+
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 
 
 class ClusterScanner:
@@ -31,23 +39,20 @@ class ClusterScanner:
         Sets self._cli_tool to 'oc', 'kubectl', or None.
         Tries oc first (OpenShift-specific), then kubectl.
         """
-        for tool in ['oc', 'kubectl']:
+        for tool in ["oc", "kubectl"]:
             try:
                 result = subprocess.run(
-                    [tool, 'version', '--client'],
-                    capture_output=True,
-                    timeout=5,
-                    text=True
+                    [tool, "version", "--client"], capture_output=True, timeout=5, text=True
                 )
                 if result.returncode == 0:
                     self._cli_tool = tool
-                    print(f"Detected CLI tool: {tool}")
+                    logger.info(f"Detected CLI tool: {tool}")
                     return
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 continue
 
         self._cli_tool = None
-        print("No cluster CLI tool (oc/kubectl) detected")
+        logger.info("No cluster CLI tool (oc/kubectl) detected")
 
     def _run_command(self, args: List[str], timeout: int = 10) -> Optional[Dict]:
         """
@@ -65,28 +70,25 @@ class ClusterScanner:
 
         try:
             result = subprocess.run(
-                [self._cli_tool] + args,
-                capture_output=True,
-                timeout=timeout,
-                text=True
+                [self._cli_tool] + args, capture_output=True, timeout=timeout, text=True
             )
 
             if result.returncode != 0:
-                print(f"Command failed: {' '.join([self._cli_tool] + args)}")
+                logger.info(f"Command failed: {' '.join([self._cli_tool] + args)}")
                 if result.stderr:
-                    print(f"Error: {result.stderr}")
+                    logger.info(f"Error: {result.stderr}")
                 return None
 
             return json.loads(result.stdout)
 
         except subprocess.TimeoutExpired:
-            print(f"Command timeout: {' '.join([self._cli_tool] + args)}")
+            logger.info(f"Command timeout: {' '.join([self._cli_tool] + args)}")
             return None
         except json.JSONDecodeError as e:
-            print(f"JSON parse error: {e}")
+            logger.info(f"JSON parse error: {e}")
             return None
         except Exception as e:
-            print(f"Unexpected error running command: {e}")
+            logger.info(f"Unexpected error running command: {e}")
             return None
 
     def is_cluster_available(self) -> bool:
@@ -102,10 +104,7 @@ class ClusterScanner:
         # Try a simple command that should always work if connected
         try:
             result = subprocess.run(
-                [self._cli_tool, 'cluster-info'],
-                capture_output=True,
-                timeout=5,
-                text=True
+                [self._cli_tool, "cluster-info"], capture_output=True, timeout=5, text=True
             )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
@@ -119,10 +118,10 @@ class ClusterScanner:
             Dictionary with cluster information or None if cluster unavailable
         """
         if not self.is_cluster_available():
-            print("Cluster not available - skipping cluster scan")
+            logger.info("Cluster not available - skipping cluster scan")
             return None
 
-        print("Scanning cluster resources...")
+        logger.info("Scanning cluster resources...")
 
         # Scan all cluster components
         nodes_info = self._scan_nodes()
@@ -141,7 +140,7 @@ class ClusterScanner:
         nodes_info.update(available_info)
 
         # Also include raw usage data
-        nodes_info['resource_usage'] = usage_info
+        nodes_info["resource_usage"] = usage_info
 
         return {
             "nodes": nodes_info,
@@ -149,7 +148,7 @@ class ClusterScanner:
             "storage_classes": storage_classes,
             "operators": operators,
             "crds": crds,
-            "cli_tool": self._cli_tool
+            "cli_tool": self._cli_tool,
         }
 
     def _scan_nodes(self) -> Dict[str, Any]:
@@ -161,7 +160,7 @@ class ClusterScanner:
         Returns:
             Dictionary with node information including total/allocatable resources
         """
-        nodes_data = self._run_command(['get', 'nodes', '-o', 'json'])
+        nodes_data = self._run_command(["get", "nodes", "-o", "json"])
         if not nodes_data:
             return {
                 "total_nodes": 0,
@@ -169,7 +168,7 @@ class ClusterScanner:
                 "total_memory": "0",
                 "allocatable_cpu": "0",
                 "allocatable_memory": "0",
-                "nodes": []
+                "nodes": [],
             }
 
         # Parse node data
@@ -179,15 +178,15 @@ class ClusterScanner:
         allocatable_memory_bytes = 0.0
         nodes = []
 
-        for node in nodes_data.get('items', []):
-            capacity = node['status']['capacity']
-            allocatable = node['status']['allocatable']
+        for node in nodes_data.get("items", []):
+            capacity = node["status"]["capacity"]
+            allocatable = node["status"]["allocatable"]
 
             # Extract CPU and memory
-            cpu_capacity = capacity.get('cpu', '0')
-            memory_capacity = capacity.get('memory', '0')
-            cpu_allocatable = allocatable.get('cpu', '0')
-            memory_allocatable = allocatable.get('memory', '0')
+            cpu_capacity = capacity.get("cpu", "0")
+            memory_capacity = capacity.get("memory", "0")
+            cpu_allocatable = allocatable.get("cpu", "0")
+            memory_allocatable = allocatable.get("memory", "0")
 
             # Aggregate (convert to standard units)
             total_cpu_millicores += cpu_to_millicores(cpu_capacity)
@@ -196,18 +195,20 @@ class ClusterScanner:
             allocatable_memory_bytes += memory_to_bytes(memory_allocatable)
 
             # Get node status
-            conditions = node['status'].get('conditions', [])
-            status = 'Unknown'
+            conditions = node["status"].get("conditions", [])
+            status = "Unknown"
             for condition in conditions:
-                if condition.get('type') == 'Ready':
-                    status = 'Ready' if condition.get('status') == 'True' else 'NotReady'
+                if condition.get("type") == "Ready":
+                    status = "Ready" if condition.get("status") == "True" else "NotReady"
 
-            nodes.append({
-                "name": node['metadata']['name'],
-                "capacity": {"cpu": cpu_capacity, "memory": memory_capacity},
-                "allocatable": {"cpu": cpu_allocatable, "memory": memory_allocatable},
-                "status": status
-            })
+            nodes.append(
+                {
+                    "name": node["metadata"]["name"],
+                    "capacity": {"cpu": cpu_capacity, "memory": memory_capacity},
+                    "allocatable": {"cpu": cpu_allocatable, "memory": memory_allocatable},
+                    "status": status,
+                }
+            )
 
         return {
             "total_nodes": len(nodes),
@@ -215,7 +216,7 @@ class ClusterScanner:
             "total_memory": bytes_to_human_readable(total_memory_bytes),
             "allocatable_cpu": millicores_to_human_readable(allocatable_cpu_millicores),
             "allocatable_memory": bytes_to_human_readable(allocatable_memory_bytes),
-            "nodes": nodes
+            "nodes": nodes,
         }
 
     def _scan_storage_classes(self) -> List[Dict[str, Any]]:
@@ -227,24 +228,27 @@ class ClusterScanner:
         Returns:
             List of storage class information
         """
-        sc_data = self._run_command(['get', 'storageclass', '-o', 'json'])
+        sc_data = self._run_command(["get", "storageclass", "-o", "json"])
         if not sc_data:
             return []
 
         storage_classes = []
-        for sc in sc_data.get('items', []):
+        for sc in sc_data.get("items", []):
             is_default = (
-                sc.get('metadata', {})
-                .get('annotations', {})
-                .get('storageclass.kubernetes.io/is-default-class') == 'true'
+                sc.get("metadata", {})
+                .get("annotations", {})
+                .get("storageclass.kubernetes.io/is-default-class")
+                == "true"
             )
 
-            storage_classes.append({
-                "name": sc['metadata']['name'],
-                "provisioner": sc.get('provisioner', 'unknown'),
-                "reclaim_policy": sc.get('reclaimPolicy', 'unknown'),
-                "is_default": is_default
-            })
+            storage_classes.append(
+                {
+                    "name": sc["metadata"]["name"],
+                    "provisioner": sc.get("provisioner", "unknown"),
+                    "reclaim_policy": sc.get("reclaimPolicy", "unknown"),
+                    "is_default": is_default,
+                }
+            )
 
         return storage_classes
 
@@ -255,27 +259,22 @@ class ClusterScanner:
         Returns:
             Dictionary with GPU information including models
         """
-        nodes_data = self._run_command(['get', 'nodes', '-o', 'json'])
+        nodes_data = self._run_command(["get", "nodes", "-o", "json"])
         if not nodes_data:
-            return {
-                "total_gpus": 0,
-                "gpu_types": {},
-                "gpu_models": [],
-                "nodes_with_gpu": []
-            }
+            return {"total_gpus": 0, "gpu_types": {}, "gpu_models": [], "nodes_with_gpu": []}
 
         total_gpus = 0
         gpu_types = {}
         nodes_with_gpu = []
         gpu_models = []
 
-        for node in nodes_data.get('items', []):
-            capacity = node['status']['capacity']
-            node_name = node['metadata']['name']
-            labels = node.get('metadata', {}).get('labels', {})
+        for node in nodes_data.get("items", []):
+            capacity = node["status"]["capacity"]
+            node_name = node["metadata"]["name"]
+            labels = node.get("metadata", {}).get("labels", {})
 
             # Check for various GPU resource types
-            for gpu_key in ['nvidia.com/gpu', 'amd.com/gpu', 'intel.com/gpu']:
+            for gpu_key in ["nvidia.com/gpu", "amd.com/gpu", "intel.com/gpu"]:
                 if gpu_key in capacity:
                     gpu_count = int(capacity[gpu_key])
                     if gpu_count > 0:
@@ -288,12 +287,14 @@ class ClusterScanner:
                         # NVIDIA labels: nvidia.com/gpu.product, nvidia.com/gpu.family
                         # AMD labels: amd.com/gpu.device-id
                         gpu_model = None
-                        if gpu_key == 'nvidia.com/gpu':
-                            gpu_model = labels.get('nvidia.com/gpu.product') or labels.get('nvidia.com/gpu.family')
-                        elif gpu_key == 'amd.com/gpu':
-                            gpu_model = labels.get('amd.com/gpu.device-id')
-                        elif gpu_key == 'intel.com/gpu':
-                            gpu_model = labels.get('intel.com/gpu.product')
+                        if gpu_key == "nvidia.com/gpu":
+                            gpu_model = labels.get("nvidia.com/gpu.product") or labels.get(
+                                "nvidia.com/gpu.family"
+                            )
+                        elif gpu_key == "amd.com/gpu":
+                            gpu_model = labels.get("amd.com/gpu.device-id")
+                        elif gpu_key == "intel.com/gpu":
+                            gpu_model = labels.get("intel.com/gpu.product")
 
                         if gpu_model and gpu_model not in gpu_models:
                             gpu_models.append(gpu_model)
@@ -302,7 +303,7 @@ class ClusterScanner:
             "total_gpus": total_gpus,
             "gpu_types": gpu_types,
             "gpu_models": gpu_models,
-            "nodes_with_gpu": nodes_with_gpu
+            "nodes_with_gpu": nodes_with_gpu,
         }
 
     def _scan_installed_operators(self) -> List[str]:
@@ -315,16 +316,16 @@ class ClusterScanner:
             List of operator names
         """
         # Only works with oc (OpenShift)
-        if self._cli_tool != 'oc':
+        if self._cli_tool != "oc":
             return []
 
-        csv_data = self._run_command(['get', 'clusterserviceversion', '-A', '-o', 'json'])
+        csv_data = self._run_command(["get", "clusterserviceversion", "-A", "-o", "json"])
         if not csv_data:
             return []
 
         operators = []
-        for csv in csv_data.get('items', []):
-            name = csv['metadata']['name']
+        for csv in csv_data.get("items", []):
+            name = csv["metadata"]["name"]
             operators.append(name)
 
         return operators
@@ -338,38 +339,33 @@ class ClusterScanner:
         Returns:
             List of CRD information dictionaries with name, group, versions, owner
         """
-        crd_data = self._run_command(['get', 'crd', '-o', 'json'])
+        crd_data = self._run_command(["get", "crd", "-o", "json"])
         if not crd_data:
             return []
 
         crds = []
-        for crd in crd_data.get('items', []):
-            name = crd['metadata']['name']
-            spec = crd.get('spec', {})
+        for crd in crd_data.get("items", []):
+            name = crd["metadata"]["name"]
+            spec = crd.get("spec", {})
 
             # Extract group and versions
-            group = spec.get('group', '')
-            versions = [v.get('name', '') for v in spec.get('versions', [])]
+            group = spec.get("group", "")
+            versions = [v.get("name", "") for v in spec.get("versions", [])]
 
             # Try to determine owner from labels or annotations
-            labels = crd.get('metadata', {}).get('labels', {})
-            annotations = crd.get('metadata', {}).get('annotations', {})
+            labels = crd.get("metadata", {}).get("labels", {})
+            annotations = crd.get("metadata", {}).get("annotations", {})
 
             # Common owner indicators
             owner = None
-            if 'operators.coreos.com/owner' in labels:
-                owner = labels['operators.coreos.com/owner']
-            elif 'olm.owner' in labels:
-                owner = labels['olm.owner']
-            elif 'app.kubernetes.io/managed-by' in labels:
-                owner = labels['app.kubernetes.io/managed-by']
+            if "operators.coreos.com/owner" in labels:
+                owner = labels["operators.coreos.com/owner"]
+            elif "olm.owner" in labels:
+                owner = labels["olm.owner"]
+            elif "app.kubernetes.io/managed-by" in labels:
+                owner = labels["app.kubernetes.io/managed-by"]
 
-            crds.append({
-                'name': name,
-                'group': group,
-                'versions': versions,
-                'owner': owner
-            })
+            crds.append({"name": name, "group": group, "versions": versions, "owner": owner})
 
         return crds
 
@@ -386,32 +382,26 @@ class ClusterScanner:
             Dictionary with current usage data or error info
         """
         if not self._cli_tool:
-            return {
-                "available": False,
-                "reason": "No CLI tool (oc/kubectl) detected"
-            }
+            return {"available": False, "reason": "No CLI tool (oc/kubectl) detected"}
 
         # Build command based on CLI tool
-        if self._cli_tool == 'oc':
-            cmd = ['adm', 'top', 'nodes', '--no-headers']
+        if self._cli_tool == "oc":
+            cmd = ["adm", "top", "nodes", "--no-headers"]
         else:
-            cmd = ['top', 'nodes', '--no-headers']
+            cmd = ["top", "nodes", "--no-headers"]
 
         try:
             result = subprocess.run(
-                [self._cli_tool] + cmd,
-                capture_output=True,
-                timeout=10,
-                text=True
+                [self._cli_tool] + cmd, capture_output=True, timeout=10, text=True
             )
 
             if result.returncode != 0:
                 # metrics-server likely not available
                 error_msg = result.stderr.strip() if result.stderr else "unknown error"
-                print(f"Warning: Cannot fetch resource usage - {error_msg}")
+                logger.info(f"Warning: Cannot fetch resource usage - {error_msg}")
                 return {
                     "available": False,
-                    "reason": f"metrics-server not available or error: {error_msg}"
+                    "reason": f"metrics-server not available or error: {error_msg}",
                 }
 
             # Parse output
@@ -421,7 +411,7 @@ class ClusterScanner:
             total_cpu_used_millicores = 0.0
             total_memory_used_bytes = 0.0
 
-            for line in result.stdout.strip().split('\n'):
+            for line in result.stdout.strip().split("\n"):
                 if not line.strip():
                     continue
 
@@ -442,38 +432,32 @@ class ClusterScanner:
                 total_cpu_used_millicores += cpu_millicores
                 total_memory_used_bytes += memory_bytes
 
-                nodes_usage.append({
-                    "name": node_name,
-                    "cpu_usage": cpu_usage,
-                    "cpu_usage_percent": cpu_percent,
-                    "memory_usage": memory_usage,
-                    "memory_usage_percent": memory_percent
-                })
+                nodes_usage.append(
+                    {
+                        "name": node_name,
+                        "cpu_usage": cpu_usage,
+                        "cpu_usage_percent": cpu_percent,
+                        "memory_usage": memory_usage,
+                        "memory_usage_percent": memory_percent,
+                    }
+                )
 
             return {
                 "available": True,
                 "nodes": nodes_usage,
                 "total_cpu_used": millicores_to_human_readable(total_cpu_used_millicores),
-                "total_memory_used": bytes_to_human_readable(total_memory_used_bytes)
+                "total_memory_used": bytes_to_human_readable(total_memory_used_bytes),
             }
 
         except subprocess.TimeoutExpired:
-            print("Warning: Command timeout while fetching resource usage")
-            return {
-                "available": False,
-                "reason": "Command timeout"
-            }
+            logger.info("Warning: Command timeout while fetching resource usage")
+            return {"available": False, "reason": "Command timeout"}
         except Exception as e:
-            print(f"Warning: Error fetching resource usage: {e}")
-            return {
-                "available": False,
-                "reason": f"Unexpected error: {str(e)}"
-            }
+            logger.info(f"Warning: Error fetching resource usage: {e}")
+            return {"available": False, "reason": f"Unexpected error: {str(e)}"}
 
     def _calculate_available_resources(
-        self,
-        nodes_info: Dict[str, Any],
-        usage_info: Dict[str, Any]
+        self, nodes_info: Dict[str, Any], usage_info: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Calculate currently available resources.
@@ -487,23 +471,23 @@ class ClusterScanner:
         Returns:
             Dictionary with available resources and usage percentages
         """
-        if not usage_info.get('available'):
+        if not usage_info.get("available"):
             # Usage data not available, return None for available fields
             return {
                 "available_cpu": None,
                 "available_memory": None,
                 "cpu_usage_percent": None,
                 "memory_usage_percent": None,
-                "usage_data_available": False
+                "usage_data_available": False,
             }
 
         # Get allocatable resources
-        allocatable_cpu = nodes_info.get('allocatable_cpu', '0')
-        allocatable_memory = nodes_info.get('allocatable_memory', '0')
+        allocatable_cpu = nodes_info.get("allocatable_cpu", "0")
+        allocatable_memory = nodes_info.get("allocatable_memory", "0")
 
         # Get used resources
-        used_cpu = usage_info.get('total_cpu_used', '0')
-        used_memory = usage_info.get('total_memory_used', '0')
+        used_cpu = usage_info.get("total_cpu_used", "0")
+        used_memory = usage_info.get("total_memory_used", "0")
 
         # Convert to standard units for calculation
         allocatable_cpu_millicores = cpu_to_millicores(allocatable_cpu)
@@ -530,5 +514,5 @@ class ClusterScanner:
             "available_memory": bytes_to_human_readable(available_memory_bytes),
             "cpu_usage_percent": round(cpu_usage_percent, 1),
             "memory_usage_percent": round(memory_usage_percent, 1),
-            "usage_data_available": True
+            "usage_data_available": True,
         }

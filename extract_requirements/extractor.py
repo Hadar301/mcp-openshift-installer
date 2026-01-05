@@ -1,15 +1,21 @@
 """
 Main Extractor - Orchestrates fetching and preparing content for analysis.
 """
+
 import os
+import sys
 import traceback
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
+from loguru import logger
 
 from extract_requirements.git_handler import GitRepoHandler
 from extract_requirements.parser.yaml_parser import YAMLParser
-from extract_requirements.models.requirements import ParsedYAMLResources
 from extract_requirements.utils.resource_comparisons import compare_cpu, compare_memory
+
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 
 # Load environment variables
 load_dotenv()
@@ -71,23 +77,22 @@ class RequirementsExtractor:
                 required_crds.extend(crds_in_file)
 
                 # Store parsed resources
-                parsed_yaml_resources.append({
-                    "file": file_path,
-                    "resources": parsed.model_dump()
-                })
+                parsed_yaml_resources.append({"file": file_path, "resources": parsed.model_dump()})
 
                 # Also store file with its content for LLM analysis
-                yaml_files_with_parsed.append({
-                    "path": file_path,
-                    "content": content,
-                    "parsed_resources": parsed.model_dump()
-                })
+                yaml_files_with_parsed.append(
+                    {
+                        "path": file_path,
+                        "content": content,
+                        "parsed_resources": parsed.model_dump(),
+                    }
+                )
 
             # Step 5: Aggregate YAML-extracted requirements into a summary
             yaml_summary = self._aggregate_yaml_requirements(parsed_yaml_resources)
 
             # Add required CRDs to summary
-            yaml_summary['required_crds'] = required_crds
+            yaml_summary["required_crds"] = required_crds
 
             # Step 6: Scan cluster (NEW)
             cluster_info = None
@@ -107,50 +112,42 @@ class RequirementsExtractor:
 
                         # Step 7: Check feasibility (NEW)
                         checker = FeasibilityChecker()
-                        feasibility_result = checker.check_feasibility(
-                            yaml_summary,
-                            cluster_data
-                        )
+                        feasibility_result = checker.check_feasibility(yaml_summary, cluster_data)
                         feasibility_check = feasibility_result.model_dump()
                 else:
-                    print("Cluster not available - skipping cluster scan")
+                    logger.info("Cluster not available - skipping cluster scan")
 
             except Exception as cluster_error:
                 # Don't fail the entire request if cluster scanning fails
-                print(f"Warning: Cluster scanning failed: {cluster_error}")
+                logger.info(f"Warning: Cluster scanning failed: {cluster_error}")
 
             # Return all the data for the MCP client (Claude/Cursor) to analyze
             return {
                 "success": True,
-                "repo_info": {
-                    "url": repo_url,
-                    "platform": platform,
-                    "owner": owner,
-                    "repo": repo
-                },
+                "repo_info": {"url": repo_url, "platform": platform, "owner": owner, "repo": repo},
                 "readme_content": readme_content or "No README found",
                 "deployment_files": yaml_files_with_parsed,
                 "yaml_extracted_requirements": yaml_summary,
                 "cluster_info": cluster_info,  # NEW
                 "feasibility_check": feasibility_check,  # NEW
-                "instructions_for_llm": self._generate_instructions(cluster_info, feasibility_check)
+                "instructions_for_llm": self._generate_instructions(
+                    cluster_info, feasibility_check
+                ),
             }
 
         except ValueError as e:
-            return {
-                "success": False,
-                "error": str(e),
-                "repo_url": repo_url
-            }
+            return {"success": False, "error": str(e), "repo_url": repo_url}
         except Exception as e:
             return {
                 "success": False,
                 "error": f"Unexpected error: {str(e)}",
                 "traceback": traceback.format_exc(),
-                "repo_url": repo_url
+                "repo_url": repo_url,
             }
 
-    def _aggregate_yaml_requirements(self, parsed_resources: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _aggregate_yaml_requirements(
+        self, parsed_resources: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
         Aggregate requirements from multiple YAML files into a summary.
 
@@ -182,7 +179,10 @@ class RequirementsExtractor:
             # Aggregate Memory (take maximum)
             if resources.get("memory_requests"):
                 memory = resources["memory_requests"]
-                if max_memory_requests is None or self._compare_memory(memory, max_memory_requests) > 0:
+                if (
+                    max_memory_requests is None
+                    or self._compare_memory(memory, max_memory_requests) > 0
+                ):
                     max_memory_requests = memory
 
             # Aggregate GPU (merge all types)
@@ -205,26 +205,28 @@ class RequirementsExtractor:
             if all_node_selectors:
                 for key, value in all_node_selectors.items():
                     if "gpu" in key.lower() or "nvidia" in value.lower():
-                        all_software_requirements.add("NVIDIA GPU Operator (inferred from nodeSelector)")
+                        all_software_requirements.add(
+                            "NVIDIA GPU Operator (inferred from nodeSelector)"
+                        )
 
         # Build GPU requirements with model if specified
         gpu_requirements = None
         if all_gpu_requests:
             gpu_requirements = all_gpu_requests.copy()
             if gpu_model_requirement:
-                gpu_requirements['model'] = gpu_model_requirement
+                gpu_requirements["model"] = gpu_model_requirement
 
         return {
             "hardware": {
                 "cpu": max_cpu_requests,
                 "memory": max_memory_requests,
                 "gpu": gpu_requirements,
-                "storage": all_storage_requests if all_storage_requests else None
+                "storage": all_storage_requests if all_storage_requests else None,
             },
             "node_requirements": {
                 "node_selector": all_node_selectors if all_node_selectors else None
             },
-            "software_inferred": list(all_software_requirements)
+            "software_inferred": list(all_software_requirements),
         }
 
     def _compare_cpu(self, cpu1: str, cpu2: str) -> int:
@@ -246,9 +248,7 @@ class RequirementsExtractor:
         return compare_memory(mem1, mem2)
 
     def _generate_instructions(
-        self,
-        cluster_info: Optional[Dict],
-        feasibility_check: Optional[Dict]
+        self, cluster_info: Optional[Dict], feasibility_check: Optional[Dict]
     ) -> str:
         """
         Generate LLM instructions based on available data.
@@ -270,8 +270,8 @@ class RequirementsExtractor:
         )
 
         if cluster_info:
-            nodes_info = cluster_info.get('nodes', {})
-            gpu_info = cluster_info.get('gpu_resources', {})
+            nodes_info = cluster_info.get("nodes", {})
+            gpu_info = cluster_info.get("gpu_resources", {})
 
             # Build cluster information with usage data if available
             cluster_instructions = (
@@ -282,28 +282,35 @@ class RequirementsExtractor:
             )
 
             # Add current usage info if available
-            if nodes_info.get('available_cpu') is not None:
+            if nodes_info.get("available_cpu") is not None:
                 cluster_instructions += (
                     f"- {nodes_info.get('available_cpu', 'unknown')} CPU currently available "
                     f"({nodes_info.get('cpu_usage_percent', 0):.1f}% used)\n"
                 )
             else:
-                cluster_instructions += "- CPU current usage: unknown (metrics-server may not be available)\n"
+                cluster_instructions += (
+                    "- CPU current usage: unknown (metrics-server may not be available)\n"
+                )
 
-            cluster_instructions += f"- {nodes_info.get('allocatable_memory', 'unknown')} memory allocatable\n"
+            cluster_instructions += (
+                f"- {nodes_info.get('allocatable_memory', 'unknown')} memory allocatable\n"
+            )
 
-            if nodes_info.get('available_memory') is not None:
+            if nodes_info.get("available_memory") is not None:
                 cluster_instructions += (
                     f"- {nodes_info.get('available_memory', 'unknown')} memory currently available "
                     f"({nodes_info.get('memory_usage_percent', 0):.1f}% used)\n"
                 )
             else:
-                cluster_instructions += "- Memory current usage: unknown (metrics-server may not be available)\n"
+                cluster_instructions += (
+                    "- Memory current usage: unknown (metrics-server may not be available)\n"
+                )
 
             cluster_instructions += f"- {gpu_info.get('total_gpus', 0)} GPUs\n"
 
             if feasibility_check:
                 from extract_requirements.models.requirements import FeasibilityCheck
+
                 feasibility_obj = FeasibilityCheck(**feasibility_check)
                 feasibility_summary = feasibility_obj.to_summary()
 
