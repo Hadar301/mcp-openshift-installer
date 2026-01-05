@@ -316,25 +316,22 @@ class GitRepoHandler:
         if self.gitlab_token:
             headers["PRIVATE-TOKEN"] = self.gitlab_token
 
-        params = {"path": path, "ref": "main"}
+        # Try both main and master branches
+        for branch in ["main", "master"]:
+            params = {"path": path, "ref": branch}
 
-        try:
-            response = requests.get(url, headers=headers, params=params, timeout=10)
-
-            # Try master if main doesn't exist
-            if response.status_code == 404:
-                params["ref"] = "master"
+            try:
                 response = requests.get(url, headers=headers, params=params, timeout=10)
 
-            if response.status_code == 404:
-                return []
+                if response.status_code == 404:
+                    continue  # Try next branch
 
-            response.raise_for_status()
-            data = response.json()
+                response.raise_for_status()
+                data = response.json()
 
-            return [{"path": item["path"], "type": item["type"]} for item in data]
+                return [{"path": item["path"], "type": item["type"]} for item in data]
 
-        except requests.RequestException:
-            return []
+            except requests.RequestException:
+                continue
 
         return []
