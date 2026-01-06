@@ -1,7 +1,7 @@
 """
 Test GPU model/class validation functionality.
 """
-from extract_requirements.feasibility_checker import FeasibilityChecker
+from src.cluster_checker.feasibility import FeasibilityChecker
 
 
 def test_gpu_model_validation():

@@ -1,7 +1,7 @@
 """
 Simple test script to verify the extraction functionality.
 """
-from extract_requirements.extractor import fetch_repo_content
+from src.requirements_extractor.extractor import fetch_repo_content
 import json
 
 

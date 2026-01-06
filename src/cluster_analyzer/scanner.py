@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 
 
-from extract_requirements.utils.resource_comparisons import (
+from src.requirements_extractor.utils.resource_comparisons import (
     bytes_to_human_readable,
     cpu_to_millicores,
     memory_to_bytes,

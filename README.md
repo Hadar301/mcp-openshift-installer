@@ -139,26 +139,29 @@ Then ask in Cursor chat: "Analyze installation requirements for https://github.c
 ### As a Standalone Python Module
 
 ```python
-from extract_requirements.extractor import fetch_repo_content
+from src.requirements_extractor.extractor import RequirementsExtractor
+from src.cluster_analyzer.scanner import ClusterScanner
+from src.cluster_checker.feasibility import FeasibilityChecker
 
-# Analyze a repository (automatically scans cluster if available)
-result = fetch_repo_content("https://github.com/kubernetes/kubernetes")
+extractor = RequirementsExtractor()
 
+# Option 1: Just analyze repository requirements (no cluster needed)
+result = extractor.fetch_repo_content_only("https://github.com/kubernetes/kubernetes")
 if result["success"]:
-    print(f"README: {result['readme_content'][:200]}...")
     print(f"Requirements: {result['yaml_extracted_requirements']}")
 
-    # Cluster scan results (if cluster available)
-    if result.get('cluster_info'):
-        print(f"Cluster: {result['cluster_info']['nodes']}")
-
-    # Feasibility check (if cluster available)
+# Option 2: Full feasibility check (requires cluster connection)
+result = extractor.check_feasibility_full("https://github.com/kubernetes/kubernetes")
+if result["success"]:
+    print(f"Requirements: {result['yaml_extracted_requirements']}")
     if result.get('feasibility_check'):
-        feasibility = result['feasibility_check']
-        print(f"Can install: {feasibility['is_feasible']}")
-        print(f"Confidence: {feasibility['confidence']}")
-else:
-    print(f"Error: {result['error']}")
+        print(f"Can install: {result['feasibility_check']['is_feasible']}")
+
+# Option 3: Just scan cluster
+scanner = ClusterScanner()
+if scanner.is_cluster_available():
+    cluster_info = scanner.scan_cluster()
+    print(f"Cluster has {cluster_info['nodes']['total_nodes']} nodes")
 ```
 
 ### Testing

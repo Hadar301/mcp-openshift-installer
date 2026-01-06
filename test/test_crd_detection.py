@@ -1,7 +1,7 @@
 """
 Test CRD conflict detection functionality.
 """
-from extract_requirements.extractor import RequirementsExtractor
+from src.requirements_extractor.extractor import RequirementsExtractor
 import json
 
 

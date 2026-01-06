@@ -10,9 +10,9 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 from loguru import logger
 
-from extract_requirements.git_handler import GitRepoHandler
-from extract_requirements.parser.yaml_parser import YAMLParser
-from extract_requirements.utils.resource_comparisons import compare_cpu, compare_memory
+from src.requirements_extractor.git_handler import GitRepoHandler
+from src.requirements_extractor.parser.yaml_parser import YAMLParser
+from src.requirements_extractor.utils.resource_comparisons import compare_cpu, compare_memory
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
@@ -33,12 +33,12 @@ class RequirementsExtractor:
         self.git_handler = GitRepoHandler(github_token=github_token, gitlab_token=gitlab_token)
         self.yaml_parser = YAMLParser()
 
-    def fetch_repo_content(self, repo_url: str) -> Dict[str, Any]:
+    def check_feasibility_full(self, repo_url: str) -> Dict[str, Any]:
         """
-        Fetch all relevant content from the repository.
+        Full feasibility check: fetch repo content, scan cluster, and check feasibility.
 
-        This is the main entry point that will be called by the MCP server.
-        It returns structured data ready for LLM analysis.
+        This is the comprehensive analysis entry point that combines all operations.
+        It returns structured data ready for LLM analysis including cluster info and feasibility.
 
         Args:
             repo_url: Full repository URL (e.g., https://github.com/owner/repo)
@@ -99,8 +99,8 @@ class RequirementsExtractor:
             feasibility_check = None
 
             try:
-                from extract_requirements.cluster_scanner import ClusterScanner
-                from extract_requirements.feasibility_checker import FeasibilityChecker
+                from src.cluster_analyzer.scanner import ClusterScanner
+                from src.cluster_checker.feasibility import FeasibilityChecker
 
                 scanner = ClusterScanner()
 
@@ -308,15 +308,17 @@ class RequirementsExtractor:
             cluster_instructions += f"- {gpu_info.get('total_gpus', 0)} GPUs\n"
 
             if feasibility_check:
-                from extract_requirements.models.requirements import FeasibilityCheck
+                from src.requirements_extractor.models.requirements import FeasibilityCheck
 
                 feasibility_obj = FeasibilityCheck(**feasibility_check)
                 feasibility_summary = feasibility_obj.to_summary()
 
-                cluster_instructions += f"\n\nFEASIBILITY CHECK:\n{feasibility_summary}\n"
+                cluster_instructions += f"\n\nFEASIBILITY CHECK (YAML requirements only):\n{feasibility_summary}\n"
                 cluster_instructions += (
-                    "\nPlease review the feasibility check and provide additional "
-                    "analysis or recommendations based on the complete context."
+                    "\n⚠️ CRITICAL: The above check only validates requirements found in YAML files.\n"
+                    "You MUST also check the README for additional requirements not in YAML.\n"
+                    "If README specifies requirements that conflict with cluster resources: Answer is NO.\n"
+                    "Do NOT say 'yes with caveats' - requirements are either met (YES) or not met (NO).\n"
                 )
 
             return base_instructions + cluster_instructions
@@ -325,6 +327,85 @@ class RequirementsExtractor:
             "\n\nNote: Cluster scanning was not performed (cluster may not be accessible). "
             "Please analyze requirements without cluster context."
         )
+
+    def fetch_repo_content_only(self, repo_url: str) -> Dict[str, Any]:
+        """
+        Fetch repository content and extract requirements WITHOUT cluster scanning.
+
+        Args:
+            repo_url: Full repository URL
+
+        Returns:
+            Dictionary with repo content and extracted requirements (no cluster info)
+        """
+        try:
+            # Step 1: Parse the repository URL
+            platform, owner, repo = self.git_handler.parse_repo_url(repo_url)
+
+            # Step 2: Fetch README
+            readme_content = self.git_handler.fetch_readme(owner, repo, platform)
+
+            # Step 3: Fetch deployment YAML files
+            deployment_files = self.git_handler.fetch_deployment_files(owner, repo, platform)
+
+            # Step 4: Parse YAML files to extract structured resource requirements and CRDs
+            parsed_yaml_resources = []
+            yaml_files_with_parsed = []
+            required_crds = []
+
+            for file_info in deployment_files:
+                file_path = file_info["path"]
+                content = file_info["content"]
+
+                # Parse the YAML content for resources
+                parsed = self.yaml_parser.parse_yaml_content(content, file_path)
+
+                # Extract CRD definitions from YAML
+                crds_in_file = self.yaml_parser.extract_crds_from_content(content)
+                required_crds.extend(crds_in_file)
+
+                # Store parsed resources
+                parsed_yaml_resources.append({"file": file_path, "resources": parsed.model_dump()})
+
+                # Also store file with its content for LLM analysis
+                yaml_files_with_parsed.append({
+                    "path": file_path,
+                    "content": content,
+                    "parsed_resources": parsed.model_dump(),
+                })
+
+            # Step 5: Aggregate YAML-extracted requirements into a summary
+            yaml_summary = self._aggregate_yaml_requirements(parsed_yaml_resources)
+
+            # Add required CRDs to summary
+            yaml_summary["required_crds"] = required_crds
+
+            # Return WITHOUT cluster info or feasibility check
+            return {
+                "success": True,
+                "repo_info": {"url": repo_url, "platform": platform, "owner": owner, "repo": repo},
+                "readme_content": readme_content or "No README found",
+                "deployment_files": yaml_files_with_parsed,
+                "yaml_extracted_requirements": yaml_summary,
+                "instructions_for_llm": (
+                    "Please analyze the README content and deployment files above. "
+                    "Extract all hardware requirements (CPU, memory, GPU, storage) and "
+                    "software prerequisites (Kubernetes version, operators, tools, etc.). "
+                    "The yaml_extracted_requirements section contains structured data already "
+                    "extracted from YAML files - use this as a baseline and supplement it with "
+                    "any additional requirements found in the README."
+                )
+            }
+
+        except ValueError as e:
+            return {"success": False, "error": str(e), "repo_url": repo_url}
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}",
+                "traceback": traceback.format_exc(),
+                "repo_url": repo_url,
+            }
 
 
 # Convenience function for direct use
@@ -339,4 +420,4 @@ def fetch_repo_content(repo_url: str) -> Dict[str, Any]:
         Dictionary with repository content and extracted requirements
     """
     extractor = RequirementsExtractor()
-    return extractor.fetch_repo_content(repo_url)
+    return extractor.fetch_repo_content_only(repo_url)

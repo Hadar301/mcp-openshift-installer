@@ -1,7 +1,7 @@
 """
 Test script for cluster usage tracking functionality.
 """
-from extract_requirements.cluster_scanner import ClusterScanner
+from src.cluster_analyzer.scanner import ClusterScanner
 import json
 
 

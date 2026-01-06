@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 import yaml
 from loguru import logger
 
-from extract_requirements.models.requirements import ParsedYAMLResources
+from src.requirements_extractor.models.requirements import ParsedYAMLResources
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
