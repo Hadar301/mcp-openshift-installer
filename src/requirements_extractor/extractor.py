@@ -113,8 +113,20 @@ class RequirementsExtractor:
             # Step 1: Parse the repository URL
             platform, owner, repo = self.git_handler.parse_repo_url(repo_url)
 
-            # Step 2: Fetch README
-            readme_content = self.git_handler.fetch_readme(owner, repo, platform)
+            # Step 2: Fetch all markdown files (replaces fetch_readme)
+            markdown_files = self.git_handler.fetch_markdown_files(owner, repo, platform)
+
+            # Combine for backward compatibility - put README first if exists
+            readme_content = ""
+            for md_file in markdown_files:
+                if md_file["path"].lower() == "readme.md":
+                    readme_content = md_file["content"] + "\n\n"
+                    break
+
+            # Append other markdown files
+            for md_file in markdown_files:
+                if md_file["path"].lower() != "readme.md":
+                    readme_content += f"\n\n--- {md_file['path']} ---\n\n{md_file['content']}"
 
             # Step 3: Fetch deployment YAML files
             deployment_files = self.git_handler.fetch_deployment_files(owner, repo, platform)
@@ -468,8 +480,20 @@ class RequirementsExtractor:
             # Step 1: Parse the repository URL
             platform, owner, repo = self.git_handler.parse_repo_url(repo_url)
 
-            # Step 2: Fetch README
-            readme_content = self.git_handler.fetch_readme(owner, repo, platform)
+            # Step 2: Fetch all markdown files (replaces fetch_readme)
+            markdown_files = self.git_handler.fetch_markdown_files(owner, repo, platform)
+
+            # Combine for backward compatibility - put README first if exists
+            readme_content = ""
+            for md_file in markdown_files:
+                if md_file["path"].lower() == "readme.md":
+                    readme_content = md_file["content"] + "\n\n"
+                    break
+
+            # Append other markdown files
+            for md_file in markdown_files:
+                if md_file["path"].lower() != "readme.md":
+                    readme_content += f"\n\n--- {md_file['path']} ---\n\n{md_file['content']}"
 
             # Step 3: Fetch deployment YAML files
             deployment_files = self.git_handler.fetch_deployment_files(owner, repo, platform)

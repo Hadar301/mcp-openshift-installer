@@ -141,6 +141,38 @@ class GitRepoHandler:
 
         return deployment_files
 
+    def fetch_markdown_files(self, owner: str, repo: str, platform: str) -> List[Dict[str, str]]:
+        """
+        Find and fetch all markdown files from the repository.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+            platform: Platform ('github' or 'gitlab')
+
+        Returns:
+            List of dicts with 'path' and 'content' keys
+        """
+        markdown_files = []
+
+        if platform == "github":
+            # Use Git Tree API for efficient recursive search
+            all_files = self._get_all_files_github(owner, repo)
+        elif platform == "gitlab":
+            # GitLab: search common paths (GitLab API doesn't have as good recursive support)
+            all_files = self._get_files_from_common_paths(owner, repo, platform)
+        else:
+            return markdown_files
+
+        # Filter for markdown files and fetch their content
+        for file_path in all_files:
+            if file_path.endswith(".md"):
+                content = self._fetch_file(owner, repo, file_path, platform)
+                if content:
+                    markdown_files.append({"path": file_path, "content": content})
+
+        return markdown_files
+
     def _get_all_files_github(self, owner: str, repo: str) -> List[str]:
         """
         Get all file paths from a GitHub repository using the Git Tree API.
@@ -170,12 +202,12 @@ class GitRepoHandler:
                 data = response.json()
 
                 tree = data.get("tree", [])
-                # Filter for files only (not directories) and YAML files
+                # Filter for files only (not directories) and YAML/Markdown files
                 file_paths = [
                     item["path"]
                     for item in tree
                     if item["type"] == "blob"
-                    and (item["path"].endswith(".yaml") or item["path"].endswith(".yml"))
+                    and (item["path"].endswith(".yaml") or item["path"].endswith(".yml") or item["path"].endswith(".md"))
                 ]
                 return file_paths
 
@@ -209,7 +241,7 @@ class GitRepoHandler:
         # Also check root directory
         root_files = self._list_directory(owner, repo, "", platform)
         for file_info in root_files:
-            if file_info["path"].endswith((".yaml", ".yml")):
+            if file_info["path"].endswith((".yaml", ".yml", ".md")):
                 file_paths.append(file_info["path"])
 
         return file_paths
