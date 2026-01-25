@@ -3,7 +3,6 @@ Main Extractor - Orchestrates fetching and preparing content for analysis.
 """
 
 import os
-import sys
 import traceback
 from typing import Any, Dict, List, Optional
 

@@ -3,7 +3,6 @@ Git Repository Handler - Fetches files from GitHub/GitLab using their APIs.
 """
 
 import base64
-import sys
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 

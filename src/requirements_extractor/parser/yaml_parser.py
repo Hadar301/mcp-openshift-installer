@@ -3,7 +3,7 @@ YAML Parser - Extracts resource requirements from Kubernetes/Helm YAML files.
 """
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import yaml
 

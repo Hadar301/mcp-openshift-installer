@@ -3,7 +3,6 @@ Test CRD conflict detection functionality.
 """
 
 from src.requirements_extractor.extractor import RequirementsExtractor
-import json
 
 
 def test_crd_detection():
@@ -26,7 +25,7 @@ def test_crd_detection():
     yaml_reqs = result.get("yaml_extracted_requirements", {})
     required_crds = yaml_reqs.get("required_crds", [])
 
-    print(f"\n✅ Repository analyzed successfully")
+    print("\n✅ Repository analyzed successfully")
     print(f"\nRequired CRDs found: {len(required_crds)}")
 
     if required_crds:

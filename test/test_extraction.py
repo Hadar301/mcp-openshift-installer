@@ -3,7 +3,6 @@ Simple test script to verify the extraction functionality.
 """
 
 from src.requirements_extractor.extractor import fetch_repo_content
-import json
 
 
 def test_extraction(repo_url: str):
