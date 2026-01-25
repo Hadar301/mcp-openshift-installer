@@ -3,16 +3,11 @@ YAML Parser - Extracts resource requirements from Kubernetes/Helm YAML files.
 """
 
 import re
-import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
-from loguru import logger
 
 from src.requirements_extractor.models.requirements import ParsedYAMLResources
-
-logger.remove()
-logger.add(sys.stderr, level="INFO")
 
 
 class YAMLParser:
@@ -153,8 +148,6 @@ class YAMLParser:
             resolved_content = self._resolve_simple_template(content, values)
             # Check if any templating remains unresolved
             has_templating = self._detect_helm_templating(resolved_content)
-            if has_templating:
-                logger.info(f"Some Helm templating in {file_path} could not be resolved")
 
         try:
             # Try to parse as YAML (may contain multiple documents)
@@ -178,8 +171,7 @@ class YAMLParser:
             result.has_unresolved_templating = has_templating
             return result
 
-        except yaml.YAMLError as e:
-            logger.info(f"Warning: Could not parse YAML in {file_path}: {e}")
+        except yaml.YAMLError:
             result = ParsedYAMLResources()
             result.has_unresolved_templating = has_templating
             return result

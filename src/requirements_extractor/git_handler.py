@@ -8,10 +8,6 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
-from loguru import logger
-
-logger.remove()
-logger.add(sys.stderr, level="INFO")
 
 
 class GitRepoHandler:
@@ -53,9 +49,6 @@ class GitRepoHandler:
         """
         self.github_token = github_token
         self.gitlab_token = gitlab_token
-        logger.debug(f"GitRepoHandler initialized with github_token: {'SET' if github_token else 'NOT SET'}")
-        if github_token:
-            logger.debug(f"GitHub token prefix: {github_token[:10]}...")
 
     def parse_repo_url(self, url: str) -> Tuple[str, str, str]:
         """
@@ -188,7 +181,6 @@ class GitRepoHandler:
         Returns:
             List of file paths
         """
-        logger.info(f"Fetching file tree for {owner}/{repo}")
         # Try main branch first, then master
         for branch in ["main", "master"]:
             url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
@@ -198,19 +190,15 @@ class GitRepoHandler:
                 headers["Authorization"] = f"token {self.github_token}"
 
             try:
-                logger.info(f"Trying branch '{branch}' at URL: {url}")
                 response = requests.get(url, headers=headers, timeout=15)
-                logger.info(f"Response status: {response.status_code}")
 
                 if response.status_code == 404:
-                    logger.info(f"Branch '{branch}' not found, trying next...")
                     continue  # Try next branch
 
                 response.raise_for_status()
                 data = response.json()
 
                 tree = data.get("tree", [])
-                logger.info(f"Got {len(tree)} total items in tree")
 
                 # Filter for files only (not directories) and YAML/Markdown files
                 file_paths = [
@@ -219,14 +207,11 @@ class GitRepoHandler:
                     if item["type"] == "blob"
                     and (item["path"].endswith(".yaml") or item["path"].endswith(".yml") or item["path"].endswith(".md"))
                 ]
-                logger.info(f"Found {len(file_paths)} YAML/Markdown files")
                 return file_paths
 
-            except requests.RequestException as e:
-                logger.error(f"Error fetching file tree from branch {branch}: {e}")
+            except requests.RequestException:
                 continue
 
-        logger.warning(f"Could not fetch file tree for {owner}/{repo} - no valid branch found")
         return []
 
     def _get_files_from_common_paths(self, owner: str, repo: str, platform: str) -> List[str]:
@@ -312,8 +297,7 @@ class GitRepoHandler:
                 content = base64.b64decode(data["content"]).decode("utf-8")
                 return content
 
-        except (requests.RequestException, KeyError, ValueError) as e:
-            logger.info(f"Warning: Could not fetch {path}: {e}")
+        except (requests.RequestException, KeyError, ValueError):
             return None
 
         return None
@@ -340,8 +324,7 @@ class GitRepoHandler:
             response.raise_for_status()
             return response.text
 
-        except requests.RequestException as e:
-            logger.info(f"Warning: Could not fetch {path}: {e}")
+        except requests.RequestException:
             return None
 
     def _fetch_file(self, owner: str, repo: str, path: str, platform: str) -> Optional[str]:

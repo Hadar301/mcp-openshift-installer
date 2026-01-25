@@ -8,11 +8,7 @@ about node capacity, storage classes, GPU availability, operators, and CRDs.
 import json
 import re
 import subprocess
-import sys
 from typing import Any, Dict, List, Optional
-
-from loguru import logger
-
 
 from src.requirements_extractor.utils.resource_comparisons import (
     bytes_to_human_readable,
@@ -20,9 +16,6 @@ from src.requirements_extractor.utils.resource_comparisons import (
     memory_to_bytes,
     millicores_to_human_readable,
 )
-
-logger.remove()
-logger.add(sys.stderr, level="INFO")
 
 
 class ClusterScanner:
@@ -48,13 +41,11 @@ class ClusterScanner:
                 )
                 if result.returncode == 0:
                     self._cli_tool = tool
-                    logger.info(f"Detected CLI tool: {tool}")
                     return
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 continue
 
         self._cli_tool = None
-        logger.info("No cluster CLI tool (oc/kubectl) detected")
 
     def _validate_command_args(self, args: List[str]) -> bool:
         """
@@ -96,7 +87,6 @@ class ClusterScanner:
         
         # Type safety: ensure all args are strings
         if not all(isinstance(arg, str) for arg in args):
-            logger.error("All command arguments must be strings")
             return False
             
         # Check for dangerous patterns
@@ -111,7 +101,6 @@ class ClusterScanner:
         for arg in args:
             for pattern in dangerous_patterns:
                 if re.search(pattern, arg):
-                    logger.error(f"Dangerous pattern detected in argument: {arg}")
                     return False
         
         # Validate specific command structure
@@ -125,7 +114,6 @@ class ClusterScanner:
                     
                 resource = args[1]
                 if resource not in cmd_config['valid_resources']:
-                    logger.error(f"Invalid resource for get command: {resource}")
                     return False
                 
                 # Validate remaining arguments are flags
@@ -135,7 +123,6 @@ class ClusterScanner:
                     if arg.startswith('-'):
                         flag_name = arg.split('=')[0]
                         if flag_name not in cmd_config['valid_flags']:
-                            logger.error(f"Invalid flag for get command: {flag_name}")
                             return False
                         
                         # Special handling for flags that take values
@@ -143,14 +130,12 @@ class ClusterScanner:
                             # Allow safe characters in selector values (key=value format)
                             selector_value = args[i + 1]
                             if not re.match(r'^[a-zA-Z0-9._/=-]+$', selector_value):
-                                logger.error(f"Invalid selector value: {selector_value}")
                                 return False
                             i += 2  # Skip the value
                         elif flag_name in ['-o'] and i + 1 < len(args):
                             # Allow safe characters in output format
                             output_value = args[i + 1]
                             if not re.match(r'^[a-zA-Z0-9._=]+$', output_value):
-                                logger.error(f"Invalid output format: {output_value}")
                                 return False
                             i += 2  # Skip the value
                         else:
@@ -158,7 +143,6 @@ class ClusterScanner:
                     else:
                         # Non-flag arguments (like resource names) should be safe
                         if not re.match(r'^[a-zA-Z0-9._-]+$', arg):
-                            logger.error(f"Invalid resource name: {arg}")
                             return False
                         i += 1
             
@@ -204,15 +188,13 @@ class ClusterScanner:
 
         # Validate arguments to prevent command injection
         if not self._validate_command_args(args):
-            logger.error(f"Invalid command arguments detected: {args}")
             return None
 
         try:
             # Use subprocess.run with proper argument list (no shell=True)
             # This ensures each argument is passed as a separate string
             cmd = [self._cli_tool] + args
-            logger.debug(f"Executing command: {' '.join(cmd)}")
-            
+
             result = subprocess.run(
                 cmd, 
                 capture_output=True, 
@@ -223,21 +205,15 @@ class ClusterScanner:
             )
 
             if result.returncode != 0:
-                logger.info(f"Command failed: {' '.join(cmd)}")
-                if result.stderr:
-                    logger.info(f"Error: {result.stderr}")
                 return None
 
             return json.loads(result.stdout)
 
         except subprocess.TimeoutExpired:
-            logger.info(f"Command timeout: {' '.join([self._cli_tool] + args)}")
             return None
-        except json.JSONDecodeError as e:
-            logger.info(f"JSON parse error: {e}")
+        except json.JSONDecodeError:
             return None
-        except Exception as e:
-            logger.info(f"Unexpected error running command: {e}")
+        except Exception:
             return None
 
     def is_cluster_available(self) -> bool:
@@ -271,10 +247,7 @@ class ClusterScanner:
             Dictionary with cluster information or None if cluster unavailable
         """
         if not self.is_cluster_available():
-            logger.info("Cluster not available - skipping cluster scan")
             return None
-
-        logger.info("Scanning cluster resources...")
 
         # Fetch nodes data once for reuse
         nodes_data_raw = self._run_command(["get", "nodes", "-o", "json"])
@@ -330,10 +303,7 @@ class ClusterScanner:
             Dict with only requested resource types, or None if cluster unavailable
         """
         if not self.is_cluster_available():
-            logger.info("Cluster not available - skipping cluster scan")
             return None
-
-        logger.info("Performing targeted cluster scan based on requirements...")
 
         hardware = requirements.get('hardware', {})
         result = {}
@@ -352,7 +322,6 @@ class ClusterScanner:
         # If NO requirements found (e.g., YAML parsing failed), do basic scan
         # This ensures we always return at least nodes + GPUs for LLM analysis
         if not has_any_requirements:
-            logger.info("No requirements found - performing basic cluster scan (nodes + GPUs)")
             nodes_data_raw = self._run_command(["get", "nodes", "-o", "json"])
             result["nodes"] = self._scan_nodes()
             result["gpu_resources"] = self._scan_gpu_resources(nodes_data_raw)
@@ -660,7 +629,6 @@ class ClusterScanner:
 
         # Validate command args first
         if not self._validate_command_args(cmd):
-            logger.error(f"Invalid command arguments for resource usage: {cmd}")
             return {"available": False, "reason": "Invalid command arguments"}
             
         try:
@@ -672,7 +640,6 @@ class ClusterScanner:
             if result.returncode != 0:
                 # metrics-server likely not available
                 error_msg = result.stderr.strip() if result.stderr else "unknown error"
-                logger.info(f"Warning: Cannot fetch resource usage - {error_msg}")
                 return {
                     "available": False,
                     "reason": f"metrics-server not available or error: {error_msg}",
@@ -724,10 +691,8 @@ class ClusterScanner:
             }
 
         except subprocess.TimeoutExpired:
-            logger.info("Warning: Command timeout while fetching resource usage")
             return {"available": False, "reason": "Command timeout"}
         except Exception as e:
-            logger.info(f"Warning: Error fetching resource usage: {e}")
             return {"available": False, "reason": f"Unexpected error: {str(e)}"}
 
     def _calculate_available_resources(

@@ -7,20 +7,9 @@ import sys
 import traceback
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv
-from loguru import logger
-
 from src.requirements_extractor.git_handler import GitRepoHandler
 from src.requirements_extractor.parser.yaml_parser import YAMLParser
 from src.requirements_extractor.utils.resource_comparisons import compare_cpu, compare_memory
-
-logger.remove()
-logger.add(sys.stderr, level="INFO")
-
-# Don't load .env file - rely on MCP config to provide environment variables
-# If running outside MCP, users can set GITHUB_TOKEN in their shell environment
-# load_dotenv() is commented out to avoid any conflicts with MCP-provided env vars
-# load_dotenv(override=False)
 
 
 class RequirementsExtractor:
@@ -63,9 +52,8 @@ class RequirementsExtractor:
                     values = yaml.safe_load(content)
                     if isinstance(values, dict):
                         values_by_dir[dir_path] = values
-                        logger.info(f"Found values.yaml in {dir_path}")
-                except Exception as e:
-                    logger.info(f"Could not parse values.yaml at {path}: {e}")
+                except Exception:
+                    pass
 
         # Second pass: associate files with their chart's values
         for file_info in deployment_files:
@@ -90,10 +78,6 @@ class RequirementsExtractor:
         # Get tokens from environment variables
         github_token = os.getenv("GITHUB_TOKEN")
         gitlab_token = os.getenv("GITLAB_TOKEN")
-
-        logger.debug(f"Environment GITHUB_TOKEN: {'SET' if github_token else 'NOT SET'}")
-        if github_token:
-            logger.debug(f"Token length: {len(github_token)}, prefix: {github_token[:10] if len(github_token) > 10 else 'TOO SHORT'}...")
 
         self.git_handler = GitRepoHandler(github_token=github_token, gitlab_token=gitlab_token)
         self.yaml_parser = YAMLParser()
@@ -158,7 +142,6 @@ class RequirementsExtractor:
                 # Skip files that don't contain Kubernetes objects (unless they're values.yaml or Chart.yaml)
                 is_helm_file = file_path.endswith("values.yaml") or file_path.endswith("Chart.yaml")
                 if not is_helm_file and not self.yaml_parser.is_kubernetes_manifest(content):
-                    logger.info(f"Skipping {file_path} - not a Kubernetes manifest")
                     continue
 
                 # Get values.yaml content for this file's chart (if available)
@@ -193,7 +176,6 @@ class RequirementsExtractor:
             gpu_likely_required = self._detect_gpu_keywords_in_readme(readme_content)
             if gpu_likely_required:
                 yaml_summary["gpu_likely_required"] = True
-                logger.info("GPU keywords detected in README - flagging as likely GPU requirement")
 
             # Step 6: Scan cluster (NEW)
             cluster_info = None
@@ -216,12 +198,10 @@ class RequirementsExtractor:
                         checker = FeasibilityChecker()
                         feasibility_result = checker.check_feasibility(yaml_summary, cluster_data)
                         feasibility_check = feasibility_result.model_dump()
-                else:
-                    logger.info("Cluster not available - skipping cluster scan")
 
-            except Exception as cluster_error:
+            except Exception:
                 # Don't fail the entire request if cluster scanning fails
-                logger.info(f"Warning: Cluster scanning failed: {cluster_error}")
+                pass
 
             # Return all the data for the MCP client (Claude/Cursor) to analyze
             return {
@@ -539,7 +519,6 @@ class RequirementsExtractor:
                 # Skip files that don't contain Kubernetes objects (unless they're values.yaml or Chart.yaml)
                 is_helm_file = file_path.endswith("values.yaml") or file_path.endswith("Chart.yaml")
                 if not is_helm_file and not self.yaml_parser.is_kubernetes_manifest(content):
-                    logger.info(f"Skipping {file_path} - not a Kubernetes manifest")
                     continue
 
                 # Get values.yaml content for this file's chart (if available)
