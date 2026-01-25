@@ -93,29 +93,37 @@ cd mcp-openshift-installer-checker
 uv sync
 ```
 
-Then edit `~/.claude/mcp_config.json`:
+Then edit `~/.claude.json` and add the MCP server configuration to the project where you want to use it. For example, to configure it for your home directory (`/Users/yourusername`):
+
 ```json
 {
-  "mcpServers": {
-    "openshift-installer-checker": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/mcp-openshift-installer-checker",
-        "run",
-        "python",
-        "main.py"
-      ],
-      "cwd": "/path/to/mcp-openshift-installer-checker",
-      "env": {
-        "GITHUB_TOKEN": "<your-github-token>"
+  "projects": {
+    "/Users/yourusername": {
+      "mcpServers": {
+        "openshift-installer-checker": {
+          "type": "stdio",
+          "command": "uv",
+          "args": [
+            "--directory",
+            "/path/to/mcp-openshift-installer-checker",
+            "run",
+            "python",
+            "main.py"
+          ],
+          "env": {
+            "GITHUB_TOKEN": "<your-github-token>"
+          }
+        }
       }
     }
   }
 }
 ```
 
-**Note**: Replace `/path/to/mcp-openshift-installer-checker` with the actual path where you cloned the repository, and `<your-github-token>` with your GitHub personal access token.
+**Note**:
+- Replace `/Users/yourusername` with your actual home directory path
+- Replace `/path/to/mcp-openshift-installer-checker` with the actual path where you cloned the repository
+- Replace `<your-github-token>` with your GitHub personal access token
 
 Then use Claude Code:
 ```bash
