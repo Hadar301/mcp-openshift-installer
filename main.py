@@ -76,6 +76,10 @@ def scan_cluster() -> dict:
     - User asks "what does my cluster have?"
     - User asks "scan my cluster"
     - User wants to know their cluster's capabilities WITHOUT comparing to any app
+        For Example, questions like:
+            - "How many available GPUs are on the cluster?"
+            - "How many available CPU cores are on the cluster?"
+        And also question that might regard other cluster resources.
 
     DO NOT USE when user asks about installing/deploying an app (use check_feasibility instead)
     DO NOT USE when user asks about app requirements (use fetch_repo_content instead)
